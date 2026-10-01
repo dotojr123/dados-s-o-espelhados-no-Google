@@ -16,12 +16,14 @@ import {
   setSimulatedOffline,
   getPendingSyncQueue,
 } from './childProfilesService';
-import { ChildAccount, SyncLogEntry, OfflinePendingItem } from './types';
 import { GoogleSignInButton } from './components/GoogleSignInButton';
 import { ConfirmationModal } from './components/ConfirmationModal';
 import { CalendarModal } from './components/CalendarModal';
 import { SyncLogViewer } from './components/SyncLogViewer';
 import { ApiDocsViewer } from './components/ApiDocsViewer';
+import { PWAInstallButton } from './components/PWAInstallButton';
+import { ConflictResolutionModal } from './components/ConflictResolutionModal';
+import { GrowthHistoryTimeline } from './components/GrowthHistoryTimeline';
 import {
   Baby,
   Database,
@@ -42,7 +44,10 @@ import {
   Sparkles,
   Info,
   BookOpen,
+  TrendingUp,
+  GitMerge,
 } from 'lucide-react';
+import { ChildAccount, SyncLogEntry, OfflinePendingItem, SyncConflict } from './types';
 
 const DEFAULT_CHILD: ChildAccount = {
   id: 'baby_001',
@@ -61,7 +66,8 @@ export default function App() {
   const [token, setToken] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [currentTab, setCurrentTab] = useState<'app' | 'api-docs'>('app');
+  const [currentTab, setCurrentTab] = useState<'app' | 'history' | 'api-docs'>('app');
+  const [activeConflict, setActiveConflict] = useState<SyncConflict | null>(null);
 
   // Offline and network status
   const [offlineMode, setOfflineMode] = useState<boolean>(() => isAppOffline());
@@ -321,7 +327,10 @@ export default function App() {
     setConfirmModalOpen(true);
   };
 
-  const executeSaveProfile = async () => {
+  const executeSaveProfile = async (options?: {
+    forceOverwrite?: boolean;
+    customMerge?: ChildAccount;
+  }) => {
     setConfirmModalOpen(false);
     setIsSaving(true);
 
@@ -332,19 +341,36 @@ export default function App() {
         `Salvando perfil de ${activeProfile.name} (Modo: ${offlineMode ? 'OFFLINE' : 'ONLINE'})...`
       );
 
-      const result = await childProfilesService.saveChildProfile(activeProfile, spreadsheetId);
+      const result = await childProfilesService.saveChildProfile(
+        activeProfile,
+        spreadsheetId,
+        options
+      );
 
       // Refresh local list
       const updatedList = childProfilesService.getLocalProfiles();
       setSavedProfiles(updatedList);
       refreshQueue();
 
+      if (result.conflict) {
+        setActiveConflict(result.conflict);
+        addLog(
+          'CONFLICT_RESOLVED',
+          'warning',
+          `Conflito detectado: Planilha remota possui edições mais recentes!`,
+          `Divergências encontradas em: ${result.conflict.conflictedFields
+            .map((f) => f.label)
+            .join(', ')}`
+        );
+        return;
+      }
+
       if (result.syncedToCloud) {
         addLog(
           'SHEETS_WRITE',
           'success',
           `Sincronizado com Google Sheets com sucesso! (ID: ${activeProfile.id})`,
-          `Gravado em: baby-profile!A...:J...`
+          `Gravado em: baby-profile e histórico arquivado em baby-history`
         );
       } else {
         addLog(
@@ -358,6 +384,40 @@ export default function App() {
       addLog('SHEETS_WRITE', 'error', 'Erro ao salvar perfil', err.message);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Handler para resolução de conflito escolhida pelo usuário
+  const handleResolveConflict = async (
+    strategy: 'local' | 'remote' | 'merge',
+    mergedProfile?: ChildAccount
+  ) => {
+    if (!activeConflict) return;
+    const conflictData = activeConflict;
+    setActiveConflict(null);
+
+    if (strategy === 'remote') {
+      setActiveProfile(conflictData.remoteProfile);
+      addLog(
+        'CONFLICT_RESOLVED',
+        'info',
+        'Conflito resolvido: Cópia remota da nuvem adotada como atual.'
+      );
+    } else if (strategy === 'local') {
+      await executeSaveProfile({ forceOverwrite: true });
+      addLog(
+        'CONFLICT_RESOLVED',
+        'success',
+        'Conflito resolvido: Cópia local sobrescreveu a remota (Last-Write-Wins).'
+      );
+    } else if (strategy === 'merge' && mergedProfile) {
+      setActiveProfile(mergedProfile);
+      await executeSaveProfile({ customMerge: mergedProfile });
+      addLog(
+        'CONFLICT_RESOLVED',
+        'success',
+        'Conflito resolvido via Mesclagem Inteligente (Merge de campos)!'
+      );
     }
   };
 
@@ -465,6 +525,13 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white">
       {/* Modals */}
+      <ConflictResolutionModal
+        isOpen={!!activeConflict}
+        conflict={activeConflict}
+        onClose={() => setActiveConflict(null)}
+        onResolve={handleResolveConflict}
+      />
+
       <ConfirmationModal
         isOpen={confirmModalOpen}
         title={confirmDetails.title}
@@ -503,12 +570,15 @@ export default function App() {
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">
-                Firebase Auth &bull; Google Sheets &bull; Google Drive &bull; Offline Cache
+                Firebase Auth &bull; Google Sheets &bull; Google Drive &bull; PWA Offline
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
+            {/* PWA Install Button */}
+            <PWAInstallButton />
+
             {/* Offline Simulation Switch */}
             <button
               onClick={handleToggleOfflineMode}
@@ -580,6 +650,21 @@ export default function App() {
           </button>
           <button
             type="button"
+            onClick={() => setCurrentTab('history')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              currentTab === 'history'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+            }`}
+          >
+            <TrendingUp className="w-4 h-4 text-emerald-400" />
+            <span>Histórico & Evolução (Versionamento)</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 font-mono">
+              baby-history
+            </span>
+          </button>
+          <button
+            type="button"
             onClick={() => setCurrentTab('api-docs')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
               currentTab === 'api-docs'
@@ -587,9 +672,9 @@ export default function App() {
                 : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
             }`}
           >
-            <BookOpen className="w-4 h-4 text-emerald-400" />
+            <BookOpen className="w-4 h-4 text-sky-400" />
             <span>Documentação da API & Sandbox REST</span>
-            <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 font-mono">
+            <span className="px-1.5 py-0.5 rounded text-[10px] bg-sky-500/20 text-sky-300 font-mono">
               OpenAPI 3.0
             </span>
           </button>
@@ -607,6 +692,20 @@ export default function App() {
 
         {currentTab === 'api-docs' ? (
           <ApiDocsViewer />
+        ) : currentTab === 'history' ? (
+          <GrowthHistoryTimeline
+            child={activeProfile}
+            spreadsheetId={spreadsheetId}
+            onRecordAdded={() => {
+              refreshQueue();
+              addLog(
+                'SHEETS_WRITE',
+                'success',
+                'Nova medição de crescimento gravada no histórico!',
+                `Gravada na aba baby-history (${spreadsheetId || 'cache local'})`
+              );
+            }}
+          />
         ) : (
           <>
             {/* Sync Status Banner */}

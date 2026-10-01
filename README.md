@@ -95,7 +95,22 @@ Sua arquitetura é baseada no princípio **Offline-First com Resiliência**:
 - **Descarregamento Inteligente (Queue Flush)**: Ao detectar evento `window.online`, o serviço drena os itens pendentes para a planilha do Sheets de forma atômica.
 - **Simulador de Queda de Rede**: Chave na interface para simular ambiente desconectado sem precisar desligar o Wi-Fi da máquina.
 
-### 4. Proteção contra Operações Destrutivas (User Confirmation)
+### 4. Resolução de Conflitos (Last-Write-Wins & Smart Merge)
+- **Detecção Automática**: Ao sincronizar com o Google Sheets, o serviço compara o timestamp de última modificação da nuvem com a data local da última leitura.
+- **Prevenção de Sobrescrita Cega**: Se outra pessoa (ou a IA) editou a planilha remotamente, o app detecta a divergência e abre o **Modal de Resolução de Conflitos**:
+  - **Aceitar Versão da Nuvem**: Descarta as edições locais em favor do Sheets.
+  - **Sobrescrever com Local (Last-Write-Wins)**: Força a versão local sobre a planilha.
+  - **Mesclagem Inteligente (Smart Merge)**: Combina anotações e consolida os campos mais recentes de forma segura.
+
+### 5. Versionamento e Histórico de Medições (`baby-history`)
+- **Série Temporal sem Perda de Dados**: Em vez de apenas sobrescrever o peso e altura atuais em `baby-profile`, cada consulta ou alteração de medidas é arquivada como um registro versionado com carimbo de data/hora na aba **`baby-history`** do Google Sheets.
+- **Painel de Evolução**: Visualização cronológica com cálculo automático de ganho de peso e estatura ao longo do tempo.
+
+### 6. PWA Instalável (Progressive Web App)
+- **Instalação Nativa**: Configurado com `vite-plugin-pwa`, `manifest.json`, Service Worker e ícones compatíveis com Android (maskable) e iOS Safari (`apple-touch-icon`).
+- **Botão In-App**: Botão de instalação nativo no cabeçalho com guia contextual para Safari no iPhone/iPad.
+
+### 7. Proteção contra Operações Destrutivas (User Confirmation)
 - Conforme as diretrizes oficiais de integração do Google Workspace, nenhuma mutação ou sobrescrita em planilhas ocorre de forma silenciosa. A aplicação exibe um diálogo modal de confirmação explícita com detalhes do registro antes do disparo.
 
 ---

@@ -223,6 +223,20 @@ export const googleWorkspaceSync = {
 
     await this.updateSheetData(spreadsheetId, 'baby-profile!A1:J1', headerRow);
 
+    // Inicializa os cabeçalhos na aba baby-history para versionamento
+    const historyHeader = [
+      [
+        'ID do Registro',
+        'ID da Criança',
+        'Nome',
+        'Data e Hora',
+        'Peso (kg)',
+        'Altura (cm)',
+        'Notas / Marco Pediátrico',
+      ],
+    ];
+    await this.updateSheetData(spreadsheetId, 'baby-history!A1:G1', historyHeader);
+
     // Se fornecido folderId, move o arquivo para a pasta criada no Drive
     if (folderId && spreadsheetId) {
       try {
@@ -303,5 +317,55 @@ export const googleWorkspaceSync = {
     }
 
     return response.json();
+  },
+
+  // Versionamento no Google Sheets: Inserir medição no histórico (aba baby-history)
+  async recordGrowthMeasurement(spreadsheetId: string, record: {
+    id: string;
+    childId: string;
+    childName: string;
+    recordedAt: string;
+    weightKg: string;
+    heightCm: string;
+    notes?: string;
+  }) {
+    const row = [
+      [
+        record.id,
+        record.childId,
+        record.childName,
+        record.recordedAt,
+        record.weightKg,
+        record.heightCm,
+        record.notes || '',
+      ],
+    ];
+    return this.appendSheetData(spreadsheetId, 'baby-history!A:G', row);
+  },
+
+  // Versionamento no Google Sheets: Buscar série histórica de medições
+  async fetchGrowthHistory(spreadsheetId: string, childId?: string) {
+    try {
+      const res = await this.fetchSheetData(spreadsheetId, 'baby-history!A2:G500');
+      if (!res.values || res.values.length === 0) return [];
+
+      const list = res.values.map((r, idx) => ({
+        id: r[0] || `meas_${idx}`,
+        childId: r[1] || '',
+        childName: r[2] || '',
+        recordedAt: r[3] || new Date().toISOString(),
+        weightKg: r[4] || '',
+        heightCm: r[5] || '',
+        notes: r[6] || '',
+      }));
+
+      if (childId) {
+        return list.filter((item) => item.childId === childId);
+      }
+      return list;
+    } catch (err) {
+      console.warn('Falha ao ler histórico de crescimento do Sheets:', err);
+      return [];
+    }
   },
 };
