@@ -2,5 +2,7 @@
   "name": "BabySync Workspace",
   "description": "Background sync between child profiles, Google Sheets, Drive and Calendar with offline resilience.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

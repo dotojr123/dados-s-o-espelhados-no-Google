@@ -21,6 +21,7 @@ import { GoogleSignInButton } from './components/GoogleSignInButton';
 import { ConfirmationModal } from './components/ConfirmationModal';
 import { CalendarModal } from './components/CalendarModal';
 import { SyncLogViewer } from './components/SyncLogViewer';
+import { ApiDocsViewer } from './components/ApiDocsViewer';
 import {
   Baby,
   Database,
@@ -40,6 +41,7 @@ import {
   Clock,
   Sparkles,
   Info,
+  BookOpen,
 } from 'lucide-react';
 
 const DEFAULT_CHILD: ChildAccount = {
@@ -59,6 +61,7 @@ export default function App() {
   const [token, setToken] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [currentTab, setCurrentTab] = useState<'app' | 'api-docs'>('app');
 
   // Offline and network status
   const [offlineMode, setOfflineMode] = useState<boolean>(() => isAppOffline());
@@ -199,18 +202,29 @@ export default function App() {
     setIsLoggingIn(true);
     setLoginError(null);
     try {
-      const { user: loggedUser, accessToken } = await signInAndGetWorkspaceToken();
-      setUser(loggedUser);
-      setToken(accessToken);
-      addLog(
-        'DRIVE_SETUP',
-        'success',
-        `Login realizado com sucesso!`,
-        `Usuário: ${loggedUser.email} (Token do Workspace capturado e em memória)`
-      );
+      const res = await signInAndGetWorkspaceToken();
+      if (res.cancelled) {
+        addLog('OFFLINE_CACHE', 'info', 'Janela de login fechada pelo usuário.');
+        return;
+      }
+      if (res.error) {
+        setLoginError(res.error);
+        addLog('DRIVE_SETUP', 'warning', 'Aviso no login', res.error);
+        return;
+      }
+      if (res.user && res.accessToken) {
+        setUser(res.user);
+        setToken(res.accessToken);
+        addLog(
+          'DRIVE_SETUP',
+          'success',
+          `Login realizado com sucesso!`,
+          `Usuário: ${res.user.email} (Token do Workspace capturado e em memória)`
+        );
 
-      // Auto-search or list Drive spreadsheets
-      loadUserSpreadsheets();
+        // Auto-search or list Drive spreadsheets
+        loadUserSpreadsheets();
+      }
     } catch (err: any) {
       console.error(err);
       setLoginError(err.message || 'Falha ao autenticar com o Google Workspace.');
@@ -550,6 +564,37 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        {/* Navigation Tabs */}
+        <div className="flex items-center gap-2 border-b border-slate-800 pb-3 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setCurrentTab('app')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              currentTab === 'app'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+            }`}
+          >
+            <Baby className="w-4 h-4" />
+            <span>Painel do Bebê & Sincronização Workspace</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrentTab('api-docs')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              currentTab === 'api-docs'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+            }`}
+          >
+            <BookOpen className="w-4 h-4 text-emerald-400" />
+            <span>Documentação da API & Sandbox REST</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 font-mono">
+              OpenAPI 3.0
+            </span>
+          </button>
+        </div>
+
         {loginError && (
           <div className="bg-rose-500/10 border border-rose-500/30 text-rose-200 p-4 rounded-xl flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
@@ -560,8 +605,12 @@ export default function App() {
           </div>
         )}
 
-        {/* Sync Status Banner */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {currentTab === 'api-docs' ? (
+          <ApiDocsViewer />
+        ) : (
+          <>
+            {/* Sync Status Banner */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Card 1: Sheets Connection */}
           <div className="bg-slate-950/40 border border-slate-800/80 rounded-2xl p-4 flex flex-col justify-between">
             <div className="flex items-start justify-between">
@@ -1075,6 +1124,8 @@ export default function App() {
             <SyncLogViewer logs={logs} onClear={() => setLogs([])} />
           </div>
         </div>
+          </>
+        )}
       </main>
 
       {/* Footer */}

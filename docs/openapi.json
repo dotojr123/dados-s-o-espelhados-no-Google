@@ -1,0 +1,205 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "BabySync Workspace REST API",
+    "version": "1.0.0",
+    "description": "Especificação da API REST de orquestração resiliente entre Firebase Auth, Google Sheets, Google Drive e Google Calendar com suporte Offline-First.",
+    "contact": {
+      "name": "BabySync Architecture Team"
+    },
+    "license": {
+      "name": "Apache 2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
+    }
+  },
+  "servers": [
+    {
+      "url": "/api",
+      "description": "Servidor da Aplicação"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health check operacional",
+        "description": "Retorna o status do servidor, tempo de atividade e versão.",
+        "responses": {
+          "200": {
+            "description": "Servidor saudável",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" },
+                    "uptime": { "type": "number", "example": 142.8 },
+                    "environment": { "type": "string", "example": "development" },
+                    "timestamp": { "type": "string", "example": "2026-10-01T04:20:00.000Z" },
+                    "version": { "type": "string", "example": "1.0.0" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace/status": {
+      "get": {
+        "summary": "Status dos escopos e serviços Google Workspace",
+        "description": "Informa quais APIs do Google Workspace estão ativas e seus escopos.",
+        "responses": {
+          "200": {
+            "description": "Status dos serviços retornado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "configured": { "type": "boolean", "example": true },
+                    "platform": { "type": "string", "example": "google_workspace" },
+                    "scopes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" },
+                          "url": { "type": "string" },
+                          "description": { "type": "string" },
+                          "status": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sync/child-profile": {
+      "post": {
+        "summary": "Validar e preparar perfil de criança para Sheets",
+        "description": "Valida os campos de perfil e prepara a linha tabular correspondente para inserção ou atualização.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["spreadsheetId", "child"],
+                "properties": {
+                  "spreadsheetId": { "type": "string", "example": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms" },
+                  "child": {
+                    "type": "object",
+                    "required": ["id", "name", "birthdate", "gender", "bloodType"],
+                    "properties": {
+                      "id": { "type": "string", "example": "baby_001" },
+                      "name": { "type": "string", "example": "Maya Rodrigues" },
+                      "birthdate": { "type": "string", "example": "2024-04-15" },
+                      "gender": { "type": "string", "example": "Feminino" },
+                      "bloodType": { "type": "string", "example": "O+" },
+                      "weightKg": { "type": "string", "example": "7.8" },
+                      "heightCm": { "type": "string", "example": "68" },
+                      "notes": { "type": "string", "example": "Alérgica a amendoim" },
+                      "emergencyContact": { "type": "string", "example": "(11) 98765-4321" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Linha preparada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "message": { "type": "string" },
+                    "preparedRow": { "type": "array", "items": { "type": "string" } },
+                    "targetSheet": { "type": "string", "example": "baby-profile" },
+                    "syncedAt": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Erro de validação nos campos obrigatórios"
+          }
+        }
+      }
+    },
+    "/sync/flush-queue": {
+      "post": {
+        "summary": "Processar lote de fila offline",
+        "description": "Valida lote de registros que foram represados durante modo offline.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["items"],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": { "type": "object" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Lote validado e preparado"
+          }
+        }
+      }
+    },
+    "/workspace/sheets/query": {
+      "post": {
+        "summary": "Consulta direta a uma planilha via Proxy",
+        "description": "Proxy com token do Workspace para ler intervalos no Google Sheets.",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": true,
+            "description": "Bearer token OAuth 2.0 do Google",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["spreadsheetId", "range"],
+                "properties": {
+                  "spreadsheetId": { "type": "string" },
+                  "range": { "type": "string", "example": "baby-profile!A1:J10" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Linhas retornadas pelo Google Sheets"
+          },
+          "401": {
+            "description": "Token ausente ou expirado"
+          }
+        }
+      }
+    }
+  }
+}

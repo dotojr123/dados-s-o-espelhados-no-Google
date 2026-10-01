@@ -76,14 +76,21 @@ export const initAuth = (
   });
 };
 
-export const signInAndGetWorkspaceToken = async (): Promise<{ user: User; accessToken: string }> => {
+export interface AuthResult {
+  user: User | null;
+  accessToken: string | null;
+  cancelled?: boolean;
+  error?: string;
+}
+
+export const signInAndGetWorkspaceToken = async (): Promise<AuthResult> => {
   try {
     isSigningIn = true;
     const result = await signInWithPopup(firebaseAuth, provider);
 
     // Esse é o token que vai orquestrar as chamadas REST para o Google
     const credential = GoogleAuthProvider.credentialFromResult(result);
-    const accessToken = credential?.accessToken;
+    const accessToken = credential?.accessToken || null;
     const user = result.user;
 
     if (!accessToken) {
@@ -91,10 +98,26 @@ export const signInAndGetWorkspaceToken = async (): Promise<{ user: User; access
     }
 
     setWorkspaceToken(accessToken);
-    return { user, accessToken };
-  } catch (error) {
+    return { user, accessToken, cancelled: false };
+  } catch (error: any) {
+    // Tratamento gracioso quando o usuário fecha o popup ou cancela voluntariamente
+    if (
+      error.code === 'auth/popup-closed-by-user' ||
+      error.code === 'auth/cancelled-popup-request' ||
+      error.message?.includes('popup-closed-by-user')
+    ) {
+      console.info('Autenticação popup encerrada pelo usuário.');
+      return { user: null, accessToken: null, cancelled: true };
+    }
+
+    if (error.code === 'auth/popup-blocked') {
+      const msg = 'O navegador bloqueou a janela pop-up do Google. Por favor, permita pop-ups para este site.';
+      console.warn(msg);
+      return { user: null, accessToken: null, cancelled: false, error: msg };
+    }
+
     console.error('Erro na orquestração de login:', error);
-    throw error;
+    return { user: null, accessToken: null, cancelled: false, error: error.message || 'Erro na autenticação' };
   } finally {
     isSigningIn = false;
   }
